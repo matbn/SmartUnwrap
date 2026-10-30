@@ -1,0 +1,23 @@
+# Web Framework
+fastapi==0.162.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.20
+
+# Geometry processing (MIT/BSD - commercial friendly)
+numpy==2.2.6
+scipy==1.15.2
+
+# Image processing (PIL License / MIT - commercial friendly)
+pillow==10.4.0
+
+# 3D model I/O support (MIT license - commercial friendly)
+# trimesh for OBJ/STL/PLY/GLTF/GLB/PLY loading (MIT license)
+trimesh==4.5.1
+# MIT-licensed xatlas charting is retained as a non-semantic fallback option.
+xatlas==0.0.11
+# Apache-2.0 text-grounded part detection; model weights are downloaded on first run.
+transformers==4.51.3
+# FBX loading uses the Assimp C API directly via ctypes - no pyassimp needed.
+# The Assimp DLL (assimp-vc143-mt.dll, BSD-3-Clause) is bundled in backend/libs/
+# and is loaded automatically at runtime on Windows.
+# Linux: sudo apt-get install libassimp-dev | macOS: brew install assimp
