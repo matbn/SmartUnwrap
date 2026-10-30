@@ -119,6 +119,25 @@
                         <button class="icon-btn" id="texture-clear" title="Remove texture" type="button">&times;</button>
                     </div>
                 </div>
+                <div class="projection-options" id="projection-options" hidden>
+                    <div class="projection-options-head">
+                        <strong>Image projection</strong>
+                        <span>UV mapping</span>
+                    </div>
+                    <p>Generate UVs by projecting the loaded image over the mesh bounds. The automatic unwrap remains available to restore.</p>
+                    <div class="projection-fields">
+                        <label for="projection-axis">Projector direction</label>
+                        <select id="projection-axis" class="select">
+                            <option value="z">Front (+Z)</option>
+                            <option value="x">Side (+X)</option>
+                            <option value="y">Top (+Y)</option>
+                        </select>
+                    </div>
+                    <div class="projection-actions">
+                        <button class="btn primary" id="btn-project" disabled type="button">Project image to UVs</button>
+                        <button class="btn ghost" id="btn-restore-uv" disabled type="button">Restore unwrap</button>
+                    </div>
+                </div>
                 <button class="btn primary block" id="btn-apply" disabled type="button">Apply Texture</button>
                 <a id="btn-download-tex" class="btn ghost block hidden" download="baked_texture.png" type="button">Download baked texture</a>
             </section>
@@ -174,7 +193,7 @@
                 <span class="hint" id="uv-meta">—</span>
             </div>
             <div class="uv-tools" id="uv-tools">
-                <button class="uvtool active" data-tool="select" type="button" title="Select and drag islands (G)">Select</button>
+                <button class="uvtool active" data-tool="select" type="button" title="Select and drag islands (G); B then drag box-selects; arrows nudge">Select</button>
                 <button class="uvtool" data-tool="rotate" type="button" title="Drag to rotate the selected islands (R)">Rotate</button>
                 <button class="uvtool" data-tool="scale" type="button" title="Drag to scale the selected islands (S)">Scale</button>
                 <span class="spacer"></span>
@@ -184,7 +203,7 @@
             <div class="uv-wrap">
                 <canvas id="uv-canvas" width="512" height="512" tabindex="0"></canvas>
             </div>
-            <p class="uv-status" id="uv-status">Click an island to select · drag to move · G / R / S · scroll to zoom · middle-drag to pan</p>
+            <p class="uv-status" id="uv-status">Click an island to select · B then drag for box select · arrows nudge · G / R / S · scroll to zoom</p>
         </section>
     </main>
 

@@ -46,6 +46,10 @@ const ui = {
     textureName: $('texture-name'),
     textureSize: $('texture-size'),
     textureClear: $('texture-clear'),
+    projectionOptions: $('projection-options'),
+    projectionAxis: $('projection-axis'),
+    btnProject: $('btn-project'),
+    btnRestoreUv: $('btn-restore-uv'),
 
     btnApply: $('btn-apply'),
     btnDownloadTex: $('btn-download-tex'),
@@ -86,6 +90,7 @@ const state = {
     textureImageEl: null,  // HTMLImageElement of user texture
     bakedUrl: null,        // server-baked texture (data URL)
     bakedImageEl: null,
+    projection: null,      // active image projection metadata
     viewMode: 'shaded',
     threeFailed: false,
     busy: false,
@@ -386,6 +391,8 @@ const uvEd = {
     islandFaces: null,           // { offsets: Int32Array, order: Int32Array }
     islandBoxes: null,           // Float32Array(4 * islandCount)
     panning: null,
+    boxSelectArmed: false,       // B: next primary drag selects islands in a rectangle
+    boxSelect: null,             // { start, current, additive }
     checker: null,
 };
 
@@ -534,7 +541,7 @@ function setUvStatus(text) {
     ui.uvStatus.textContent = text;
 }
 
-const UV_HINT = 'Click an island to select · drag to move · G / R / S · scroll to zoom · middle-drag to pan';
+const UV_HINT = 'Click an island to select · B then drag for box select · arrow keys nudge · G / R / S · scroll to zoom';
 
 function drawUVLayoutNow() {
     const S = ui.uvCanvas.width;
@@ -582,6 +589,24 @@ function drawUVLayoutNow() {
         ctx.stroke(ip);
     }
 
+    // Keep island identifiers readable over projected/baked textures.
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `600 ${Math.max(10 / k, 0.018)}px system-ui, sans-serif`;
+    for (let id = 0; id < uvEd.islandCount; id++) {
+        const b = id * 4;
+        const width = uvEd.islandBoxes[b + 2] - uvEd.islandBoxes[b];
+        const height = uvEd.islandBoxes[b + 3] - uvEd.islandBoxes[b + 1];
+        if (width * k < 34 || height * k < 18) continue;
+        const x = (uvEd.islandBoxes[b] + uvEd.islandBoxes[b + 2]) / 2;
+        const y = 1 - (uvEd.islandBoxes[b + 1] + uvEd.islandBoxes[b + 3]) / 2;
+        ctx.lineWidth = 3 / k;
+        ctx.strokeStyle = 'rgba(5, 8, 14, 0.82)';
+        ctx.strokeText(`Island ${id + 1}`, x, y);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+        ctx.fillText(`Island ${id + 1}`, x, y);
+    }
+
     // hovered island
     if (uvEd.hover >= 0 && !uvEd.selection.has(uvEd.hover)) {
         const hp = islandPath(uvEd.hover);
@@ -612,6 +637,21 @@ function drawUVLayoutNow() {
             ctx.strokeRect(bb[0], 1 - bb[3], bb[2] - bb[0], bb[3] - bb[1]);
             ctx.setLineDash([]);
         }
+    }
+
+    // Rectangle drawn while B box-select is active. Coordinates remain in UV
+    // space, so it stays aligned when the view is zoomed or panned.
+    if (uvEd.boxSelect) {
+        const { start, current } = uvEd.boxSelect;
+        const u0 = Math.min(start.u, current.u), u1 = Math.max(start.u, current.u);
+        const v0 = Math.min(start.v, current.v), v1 = Math.max(start.v, current.v);
+        ctx.setLineDash([5 / k, 3 / k]);
+        ctx.lineWidth = 1.2 / k;
+        ctx.fillStyle = 'rgba(79, 140, 255, 0.13)';
+        ctx.strokeStyle = 'rgba(132, 181, 255, 0.98)';
+        ctx.fillRect(u0, 1 - v1, u1 - u0, v1 - v0);
+        ctx.strokeRect(u0, 1 - v1, u1 - u0, v1 - v0);
+        ctx.setLineDash([]);
     }
 
     // UV square
@@ -681,6 +721,41 @@ function islandAt(p) {
     return -1;
 }
 
+function selectIslandsInBox(start, current, additive) {
+    const u0 = Math.min(start.u, current.u), u1 = Math.max(start.u, current.u);
+    const v0 = Math.min(start.v, current.v), v1 = Math.max(start.v, current.v);
+    if (!additive) uvEd.selection.clear();
+    for (let id = 0; id < uvEd.islandCount; id++) {
+        const b = id * 4;
+        // An island is selected when any portion of its bounds intersects the
+        // rectangle. This is the expected behaviour for tightly packed charts.
+        if (uvEd.islandBoxes[b] <= u1 && uvEd.islandBoxes[b + 2] >= u0
+            && uvEd.islandBoxes[b + 1] <= v1 && uvEd.islandBoxes[b + 3] >= v0) {
+            uvEd.selection.add(id);
+        }
+    }
+}
+
+function nudgeSelection(du, dv) {
+    if (!uvEd.selection.size) {
+        toast('Select one or more islands first', 'info', 1800);
+        return;
+    }
+    const verts = selectedVerts();
+    if (!verts.length) return;
+    pushUndo();
+    for (const vertex of verts) {
+        state.uv[vertex * 2] += du;
+        state.uv[vertex * 2 + 1] += dv;
+        islandDirty.add(state.islands[vertex]);
+    }
+    uvEd.version++;
+    refreshIslandBoxes();
+    syncUVToMesh();
+    drawUVLayout.now();
+    setUvStatus(`nudge  Δu ${du.toFixed(3)}  Δv ${dv.toFixed(3)} · ${uvEd.selection.size} island${uvEd.selection.size === 1 ? '' : 's'}`);
+}
+
 /* ---------- transforms ---------- */
 
 function pushUndo() {
@@ -692,10 +767,13 @@ function pushUndo() {
 function undoUv() {
     if (!uvEd.undo.length) { toast('Nothing to undo', 'info', 2000); return; }
     state.uv = uvEd.undo.pop();
+    syncProjectionState();
     uvEd.version++;
     refreshIslandBoxes();
     syncUVToMesh();
     drawUVLayout.now();
+    updateStats();
+    refreshButtons();
     setUvStatus('Undo');
 }
 
@@ -852,6 +930,12 @@ function uvPointerDown(e) {
     if (uvEd.transform && !uvEd.transform.autoCommit) { endTransform(false); return; }
 
     const p = eventUV(e);
+    if (uvEd.boxSelectArmed) {
+        uvEd.boxSelect = { start: p, current: p, additive: e.shiftKey };
+        ui.uvCanvas.style.cursor = 'crosshair';
+        drawUVLayout.now();
+        return;
+    }
     const id = islandAt(p);
 
     if (id < 0) {
@@ -889,6 +973,12 @@ function uvPointerMove(e) {
         return;
     }
 
+    if (uvEd.boxSelect) {
+        uvEd.boxSelect.current = eventUV(e);
+        drawUVLayout.now();
+        return;
+    }
+
     const p = eventUV(e);
     if (uvEd.transform) { applyTransform(p, e.ctrlKey || e.metaKey); return; }
 
@@ -905,6 +995,17 @@ function uvPointerMove(e) {
 
 function uvPointerUp(e) {
     if (uvEd.panning) { uvEd.panning = null; return; }
+    if (uvEd.boxSelect) {
+        const box = uvEd.boxSelect;
+        box.current = eventUV(e);
+        uvEd.boxSelect = null;
+        uvEd.boxSelectArmed = false;
+        selectIslandsInBox(box.start, box.current, box.additive);
+        ui.uvCanvas.style.cursor = uvEd.tool === 'select' ? 'crosshair' : 'move';
+        drawUVLayout.now();
+        setUvStatus(`${uvEd.selection.size} island${uvEd.selection.size === 1 ? '' : 's'} selected · arrow keys nudge`);
+        return;
+    }
     if (uvEd.transform && uvEd.transform.autoCommit) endTransform(false);
 }
 
@@ -927,10 +1028,13 @@ function resetUvLayout() {
     if (!state.uvInitial) return;
     pushUndo();
     state.uv = state.uvInitial.slice();
+    state.projection = null;
     uvEd.version++;
-        refreshIslandBoxes();
+    refreshIslandBoxes();
     syncUVToMesh();
     drawUVLayout.now();
+    updateStats();
+    refreshButtons();
     toast('Island layout restored to the automatic pack', 'ok');
 }
 
@@ -944,6 +1048,20 @@ function uvKeyDown(e) {
     }
     if ((e.ctrlKey || e.metaKey) && k === 'z') { undoUv(); e.preventDefault(); return; }
 
+    if (k === 'b') {
+        uvEd.boxSelectArmed = true;
+        ui.uvCanvas.style.cursor = 'crosshair';
+        setUvStatus('Box select armed · drag a rectangle over the islands · Shift adds to selection');
+        e.preventDefault();
+        return;
+    }
+
+    const nudge = e.shiftKey ? 0.01 : 0.001;
+    if (e.key === 'ArrowLeft') { nudgeSelection(-nudge, 0); e.preventDefault(); return; }
+    if (e.key === 'ArrowRight') { nudgeSelection(nudge, 0); e.preventDefault(); return; }
+    if (e.key === 'ArrowUp') { nudgeSelection(0, nudge); e.preventDefault(); return; }
+    if (e.key === 'ArrowDown') { nudgeSelection(0, -nudge); e.preventDefault(); return; }
+
     const startMode = (mode) => {
         if (!uvEd.selection.size) { toast('Select an island first', 'info', 2200); return; }
         const anchor = uvEd.lastPointer || { u: 0.5, v: 0.5 };
@@ -955,7 +1073,15 @@ function uvKeyDown(e) {
     else if (k === 'r') { startMode('rotate'); e.preventDefault(); }
     else if (k === 's') { startMode('scale'); e.preventDefault(); }
     else if (k === 'a') { selectAllIslands(); e.preventDefault(); }
-    else if (k === 'escape') { clearSelection(); }
+    else if (k === 'escape') {
+        if (uvEd.boxSelectArmed || uvEd.boxSelect) {
+            uvEd.boxSelectArmed = false;
+            uvEd.boxSelect = null;
+            ui.uvCanvas.style.cursor = uvEd.tool === 'select' ? 'crosshair' : 'move';
+            drawUVLayout.now();
+            setUvStatus(UV_HINT);
+        } else clearSelection();
+    }
     else if (k === 'home') { resetView(); e.preventDefault(); }
 }
 
@@ -989,13 +1115,17 @@ const setBusy = (on, text = 'Processing…') => {
 function updateStats() {
     ui.stV.textContent = state.vertices ? state.vertices.length.toLocaleString() : '—';
     ui.stF.textContent = state.faces ? state.faces.length.toLocaleString() : '—';
-    ui.stMethod.textContent = state.uv ? state.method : '—';
+    ui.stMethod.textContent = state.uv
+        ? (state.projection ? `Projection ${state.projection.axis}` : state.method)
+        : '—';
     ui.btnExport.disabled = !state.uv;
 }
 
 function refreshButtons() {
     ui.btnUnwrap.disabled = !state.file || state.busy;
     ui.btnApply.disabled = !state.uv || !state.textureDataUrl || state.busy;
+    ui.btnProject.disabled = !state.vertices || !state.textureDataUrl || !state.uvInitial || state.busy;
+    ui.btnRestoreUv.disabled = !state.projection || state.busy;
 }
 
 /* ============================================================
@@ -1037,6 +1167,7 @@ async function unwrap() {
         }
         state.uv = flat;
         state.uvInitial = flat.slice();
+        state.projection = null;
         state.islands = Array.isArray(data.islands)
             ? Int32Array.from(data.islands)
             : new Int32Array(state.vertices.length);
@@ -1100,6 +1231,7 @@ function setModelFile(file) {
     // reset previous results
     state.vertices = null; state.faces = null; state.uv = null;
     state.uvInitial = null; state.islands = null;
+    state.projection = null;
     state.semanticIds = null;
     state.bakedUrl = null; state.bakedImageEl = null;
     updateSemanticLegend(null);
@@ -1120,6 +1252,7 @@ function clearModelFile() {
     ui.modelEmpty.classList.remove('hidden');
     state.vertices = null; state.faces = null; state.uv = null;
     state.uvInitial = null; state.islands = null;
+    state.projection = null;
     state.semanticIds = null;
     updateSemanticLegend(null);
     uvEd.selection.clear(); uvEd.hover = -1; uvEd.islandCount = 0;
@@ -1153,6 +1286,7 @@ function setTextureFile(file) {
             ui.textureFile.classList.remove('hidden');
             ui.textureName.textContent = file.name;
             ui.textureSize.textContent = fmtSize(file.size);
+            ui.projectionOptions.hidden = false;
             drawUVLayout.now();
             if (state.uv) setViewMode('textured'); // instant client-side preview
             refreshButtons();
@@ -1171,10 +1305,64 @@ function clearTextureFile() {
     ui.textureFile.classList.add('hidden');
     ui.textureEmpty.classList.remove('hidden');
     ui.textureThumb.src = '';
+    ui.projectionOptions.hidden = true;
     ui.btnDownloadTex.classList.add('hidden');
     drawUVLayout.now();
     if (state.viewMode === 'textured') setViewMode('checkered');
     refreshButtons();
+}
+
+function projectImageToUVs() {
+    if (!state.vertices || !state.textureDataUrl || !state.uvInitial) return;
+    const axis = ui.projectionAxis.value;
+    // Front maps X/Y, side maps Z/Y, and top maps X/Z.
+    const axes = axis === 'x' ? [2, 1] : axis === 'y' ? [0, 2] : [0, 1];
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (const vertex of state.vertices) for (let c = 0; c < 3; c++) {
+        lo[c] = Math.min(lo[c], vertex[c]);
+        hi[c] = Math.max(hi[c], vertex[c]);
+    }
+    const spanU = Math.max(hi[axes[0]] - lo[axes[0]], Number.EPSILON);
+    const spanV = Math.max(hi[axes[1]] - lo[axes[1]], Number.EPSILON);
+    const projected = new Float64Array(state.vertices.length * 2);
+    for (let i = 0; i < state.vertices.length; i++) {
+        projected[2 * i] = (state.vertices[i][axes[0]] - lo[axes[0]]) / spanU;
+        projected[2 * i + 1] = (state.vertices[i][axes[1]] - lo[axes[1]]) / spanV;
+    }
+
+    pushUndo();
+    state.uv = projected;
+    state.projection = { axis: axis.toUpperCase() };
+    uvEd.version++;
+    refreshIslandBoxes();
+    clearIslandCache();
+    syncUVToMesh();
+    drawUVLayout.now();
+    setViewMode('textured');
+    updateStats();
+    refreshButtons();
+    toast(`Image projected from ${state.projection.axis}`, 'ok');
+}
+
+function restoreAutomaticUVs() {
+    if (!state.uvInitial) return;
+    pushUndo();
+    state.uv = state.uvInitial.slice();
+    state.projection = null;
+    uvEd.version++;
+    refreshIslandBoxes();
+    clearIslandCache();
+    syncUVToMesh();
+    drawUVLayout.now();
+    updateStats();
+    refreshButtons();
+    toast('Automatic UV unwrap restored', 'ok');
+}
+
+function syncProjectionState() {
+    if (!state.projection || !state.uv || !state.uvInitial) return;
+    for (let i = 0; i < state.uv.length; i++) if (state.uv[i] !== state.uvInitial[i]) return;
+    state.projection = null;
 }
 
 async function applyTexture() {
@@ -1332,6 +1520,8 @@ function bind() {
     });
 
     ui.btnUnwrap.addEventListener('click', unwrap);
+    ui.btnProject.addEventListener('click', projectImageToUVs);
+    ui.btnRestoreUv.addEventListener('click', restoreAutomaticUVs);
     ui.btnApply.addEventListener('click', applyTexture);
     ui.btnExport.addEventListener('click', exportOBJ);
 

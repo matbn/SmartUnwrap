@@ -181,12 +181,12 @@ async def apply_texture(request: TextureRequest):
             status={"success": True, "message": "Texture applied successfully"},
             message="Texture applied successfully"
         )
-        
     except Exception as e:
         return TextureResponse(
             success=False,
             message=f"Texture application failed: {str(e)}"
         )
+
 
 @app.get("/api/methods", response_model=List[str])
 async def get_methods():

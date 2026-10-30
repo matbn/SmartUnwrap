@@ -304,6 +304,24 @@ body.dragging .dropzone {
 .sam2-control input { display: block; width: 100%; margin: 6px 0 1px; accent-color: var(--accent); }
 .sam2-control small { color: var(--muted); font-size: 9.5px; }
 
+.projection-options {
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--panel-deep);
+}
+.projection-options[hidden] { display: none; }
+.projection-options-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.projection-options-head strong { font-size: 12px; }
+.projection-options-head span { color: var(--teal); font-size: 9px; text-transform: uppercase; letter-spacing: .4px; }
+.projection-options p { margin: 6px 0 10px; color: var(--muted); font-size: 10.5px; line-height: 1.4; }
+.projection-fields { display: grid; grid-template-columns: 1fr 1.35fr; align-items: center; gap: 7px 8px; }
+.projection-fields label { color: var(--muted); font-size: 10.5px; font-weight: 600; }
+.projection-fields .select { padding: 6px 8px; font-size: 11px; }
+.projection-actions { display: grid; grid-template-columns: 1.45fr 1fr; gap: 7px; margin-top: 10px; }
+.projection-actions .btn { padding: 8px 7px; font-size: 11px; }
+
 /* Buttons */
 .btn {
     border: 1px solid transparent;

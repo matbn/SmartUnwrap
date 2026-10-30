@@ -39,16 +39,16 @@ def apply_texture_to_uv(
     output_texture = Image.new(
         'RGBA', (width, height), (0, 0, 0, 0)
     )
-    
+
     # Map each UV coordinate to texture pixel
     for i, uv_coord in enumerate(UV):
         u = int(uv_coord[0] * (width - 1))
         v = int((1 - uv_coord[1]) * (height - 1))
-        
+
         if 0 <= u < width and 0 <= v < height:
             # Get the color from texture and paste to the corresponding position
             output_texture.putpixel((u, v), resized_texture.getpixel((u, v)))
-    
+
     return output_texture
 
 
