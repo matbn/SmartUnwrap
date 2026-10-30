@@ -1,0 +1,49 @@
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Node.js ---
+node_modules/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.installed.cfg
+*.egg
+
+# --- Build / distribution ---
+build/
+dist/
+
+# --- Installer logs ---
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- Environment files ---
+.env
+.env.local
+.env.*.local
+
+# --- IDE ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+._*
+
+# --- Logs ---
+*.log
+
+# --- Test artifacts / runtime outputs ---
+test_output/
